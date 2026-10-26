@@ -1,40 +1,46 @@
-# 小小指揮家 Maestro Lite - GitHub Pages 部署指南
+# 小小指揮家 Maestro Lite - GitHub Pages 部署修復指南
 
-您的專案已完成 Vite 相對路徑設定（`base: './'`），可完美於 `https://terpe123.github.io/musiccsie/` 順暢運行！
+## 剛剛報錯的原因分析
 
----
-
-## 為什麼之前會一直載入（Spinning）？
-GitHub Pages 是一個純靜態空間，**無法在伺服器端直接編譯 TypeScript（`.tsx`）檔案**。
-先前的儲存庫直接上傳了未編譯的 `src/main.tsx`，導致瀏覽器找不到 JavaScript 產物而卡在載入畫面。
-
-只要將編譯完成的 **`dist/`** 內容放到 GitHub Pages，即可秒開！
-
----
-
-## 推薦部署方式（二選一）
-
-### 方式一：直接上傳 `dist` 內的編譯成果（最快 1 分鐘搞定）
-
-1. 本專案執行 `npm run build` 後，會產生 **`dist/`** 資料夾：
-   ```
-   dist/
-   ├── index.html
-   └── assets/
-       ├── index-CP_xQyQL.css
-       └── index-C1SowKG1.js
-   ```
-2. 開啟您的 GitHub 儲存庫 `https://github.com/terpe123/musiccsie`。
-3. 將 `dist/` 資料夾內的所有檔案（**`index.html`** 與 **`assets` 資料夾**）直接推送到儲存庫的根目錄，或者將 GitHub Pages 設定（Settings -> Pages）的來源目錄指定為該資料夾。
-4. 重新整理 `https://terpe123.github.io/musiccsie/`，即可立刻看到精美的交響樂指揮介面！
+您看到的錯誤訊息：
+```
+github-pages 232 | Error: No such file or directory @ dir_chdir0 - /github/workspace/docs
+```
+代表：
+1. GitHub 預設嘗試使用 **Jekyll**（Ruby 靜態博客引擎）進行建置，但本專案是 **React + Vite** 現代前端專案，並非 Jekyll 博客。
+2. 您的 GitHub Pages 設定了從 `/docs` 資料夾讀取，但儲存庫中先前並未生成 `docs/` 資料夾。
 
 ---
 
-### 方式二：使用 GitHub Actions 自動編譯發布（全自動）
+## 我們已經完成的修復
 
-本專案已為您新增 `.github/workflows/deploy.yml` 自動發布腳本：
+1. **已生成 `/docs` 編譯資料夾**：
+   - 內含已編譯的 `index.html` 與 `assets/`（JS/CSS），已自動設定相對路徑 `./assets/...`。
+2. **已加入 `.nojekyll` 標記**：
+   - 告訴 GitHub 關閉 Jekyll 引擎，直接作為現代靜態網站快速託管。
+3. **已清理衝突的 Workflow**：
+   - 移除了失敗的 `jekyll-gh-pages.yml` 與 `static.yml`。
+   - 保留完善的 `.github/workflows/deploy.yml`。
 
-1. 將本專案的所有檔案（包含源碼與 `.github/`）推送到 GitHub `main` 分支。
-2. 進入儲存庫的 **Settings** -> **Pages**。
-3. 在 **Build and deployment** -> **Source** 選擇 **GitHub Actions**。
-4. 每當您有新的程式碼推送，GitHub 會自動執行 `npm run build` 並將產物部署至 `https://terpe123.github.io/musiccsie/`！
+---
+
+## 如何讓網站立刻上線（推薦兩種方式任選一種）
+
+### 方式一：從 `/docs` 資料夾發布（最簡單、免跑 Actions）
+
+1. 將本專案的所有檔案（包括新生成的 **`docs/` 資料夾** 與 **`.nojekyll`**）commit 並 push 到 GitHub 的 `main` 分支。
+2. 前往您的 GitHub 儲存庫：`https://github.com/terpe123/musiccsie`
+3. 點選 **Settings** → **Pages**：
+   - **Source**：選擇 **Deploy from a branch**
+   - **Branch**：選擇 **main**，後方資料夾下拉選單選擇 **/docs**
+   - 點擊 **Save**。
+4. 等候約 30 秒，重新整理 `https://terpe123.github.io/musiccsie/`，即可立刻看到樂團指揮遊戲！
+
+---
+
+### 方式二：使用 GitHub Actions 自動發布
+
+1. 將本專案推送至 GitHub `main` 分支。
+2. 前往 **Settings** → **Pages**：
+   - **Source**：選擇 **GitHub Actions**。
+3. 系統會自動執行 `.github/workflows/deploy.yml` 完成建置並發布。
