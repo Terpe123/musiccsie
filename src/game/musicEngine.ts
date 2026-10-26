@@ -251,24 +251,36 @@ export function getRankBadgeColor(rank: 'S' | 'A' | 'B' | 'C'): { text: string; 
   }
 }
 
+// In-memory fallback if localStorage is unavailable
+const memoryStorage: Record<string, string> = {};
+
 export function getBestScore(songId: string, diff: string): number {
+  const key = `maestro_${songId}_${diff}`;
   try {
-    const val = localStorage.getItem(`maestro_${songId}_${diff}`);
-    return val ? parseInt(val, 10) || 0 : 0;
+    if (typeof window !== 'undefined' && 'localStorage' in window) {
+      const val = window.localStorage.getItem(key);
+      if (val !== null) return parseInt(val, 10) || 0;
+    }
   } catch {
-    return 0;
+    // fallback to memory
   }
+  return parseInt(memoryStorage[key] || '0', 10) || 0;
 }
 
 export function setBestScore(songId: string, diff: string, score: number): boolean {
-  try {
-    const current = getBestScore(songId, diff);
-    if (score > current) {
-      localStorage.setItem(`maestro_${songId}_${diff}`, score.toString());
-      return true;
+  const key = `maestro_${songId}_${diff}`;
+  const current = getBestScore(songId, diff);
+  if (score > current) {
+    memoryStorage[key] = score.toString();
+    try {
+      if (typeof window !== 'undefined' && 'localStorage' in window) {
+        window.localStorage.setItem(key, score.toString());
+        return true;
+      }
+    } catch {
+      // localStorage failed, memoryStorage is updated
     }
-  } catch {
-    // localStorage might fail in restricted iframe environments
+    return true;
   }
   return false;
 }

@@ -27,31 +27,60 @@ export class SoundService {
     this.onNoteTrigger = cb;
   }
 
-  private initContext(): AudioContext {
+  public initContext(): AudioContext | null {
+    if (typeof window === 'undefined') return null;
+
     if (!this.ctx) {
-      const AudioCtxClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      this.ctx = new AudioCtxClass();
-      this.masterGain = this.ctx.createGain();
-      this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : this.volume, this.ctx.currentTime);
-      this.masterGain.connect(this.ctx.destination);
+      try {
+        const AudioCtxClass =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+
+        if (!AudioCtxClass) {
+          console.warn('Web Audio API not supported in this browser');
+          return null;
+        }
+
+        this.ctx = new AudioCtxClass();
+        this.masterGain = this.ctx.createGain();
+        this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : this.volume, this.ctx.currentTime);
+        this.masterGain.connect(this.ctx.destination);
+      } catch (e) {
+        console.warn('Failed to construct AudioContext:', e);
+        return null;
+      }
     }
-    if (this.ctx.state === 'suspended') {
-      this.ctx.resume();
+
+    if (this.ctx && this.ctx.state === 'suspended') {
+      try {
+        this.ctx.resume().catch(() => {});
+      } catch {
+        // ignore
+      }
     }
+
     return this.ctx;
   }
 
   public setVolume(vol: number) {
     this.volume = Math.max(0, Math.min(1, vol));
-    if (this.masterGain && this.ctx) {
-      this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : this.volume, this.ctx.currentTime);
+    try {
+      if (this.masterGain && this.ctx) {
+        this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : this.volume, this.ctx.currentTime);
+      }
+    } catch {
+      // ignore
     }
   }
 
   public toggleMute(): boolean {
     this.isMuted = !this.isMuted;
-    if (this.masterGain && this.ctx) {
-      this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : this.volume, this.ctx.currentTime);
+    try {
+      if (this.masterGain && this.ctx) {
+        this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : this.volume, this.ctx.currentTime);
+      }
+    } catch {
+      // ignore
     }
     return this.isMuted;
   }
@@ -76,7 +105,7 @@ export class SoundService {
     isBass: boolean = false
   ) {
     const ctx = this.initContext();
-    if (!this.masterGain) return;
+    if (!ctx || !this.masterGain) return;
 
     try {
       const osc = ctx.createOscillator();
@@ -86,7 +115,6 @@ export class SoundService {
       osc.frequency.setValueAtTime(freq, start);
 
       if (isBass) {
-        // Add subtle lowpass warmth for bass
         const filter = ctx.createBiquadFilter();
         filter.type = 'lowpass';
         filter.frequency.setValueAtTime(450, start);
@@ -123,7 +151,7 @@ export class SoundService {
   }
 
   /**
-   * Schedule a string of notes (e.g. "C4 D4:0.5 E4:2")
+   * Schedule a string of notes
    */
   private scheduleNotes(
     str: string,
@@ -138,6 +166,7 @@ export class SoundService {
     let t = t0;
     const parsed = parseNotes(str);
     const ctx = this.initContext();
+    const currTime = ctx ? ctx.currentTime : 0;
 
     for (const note of parsed) {
       const len = note.dur * beat;
@@ -147,10 +176,14 @@ export class SoundService {
         this.playTone(freq, t, len * 0.94, type, vol, isBass);
 
         if (vizColor && this.onNoteTrigger) {
-          const delayMs = Math.max(0, (t - ctx.currentTime) * 1000);
+          const delayMs = Math.max(0, (t - currTime) * 1000);
           const cb = this.onNoteTrigger;
           const tid = setTimeout(() => {
-            cb({ midi, freq, color: vizColor });
+            try {
+              cb({ midi, freq, color: vizColor });
+            } catch {
+              // ignore
+            }
           }, delayMs);
           this.scheduledTimeouts.push(tid);
         }
@@ -166,7 +199,7 @@ export class SoundService {
    */
   public playPhrase(phrase: SongPhrase, bpm: number, color: string): number {
     const ctx = this.initContext();
-    const t0 = ctx.currentTime + 0.04;
+    const t0 = ctx ? ctx.currentTime + 0.04 : 0;
     const d1 = this.scheduleNotes(phrase.melody, bpm, t0, 'triangle', 0.32, color, false);
     const d2 = phrase.bass ? this.scheduleNotes(phrase.bass, bpm, t0, 'sine', 0.24, null, true) : 0;
     return Math.max(d1, d2);
@@ -177,15 +210,19 @@ export class SoundService {
    */
   public playEndChord(notes: string[]) {
     const ctx = this.initContext();
-    const t = ctx.currentTime + 0.05;
+    const t = ctx ? ctx.currentTime + 0.05 : 0;
     notes.forEach((n, i) => {
-      const midi = noteToMidi(n);
-      const freq = midiToFreq(midi);
-      this.playTone(freq, t + i * 0.08, 2.4, 'triangle', 0.22);
-      if (this.onNoteTrigger) {
-        setTimeout(() => {
-          this.onNoteTrigger?.({ midi, freq, color: '#fbbf24' });
-        }, i * 80);
+      try {
+        const midi = noteToMidi(n);
+        const freq = midiToFreq(midi);
+        this.playTone(freq, t + i * 0.08, 2.4, 'triangle', 0.22);
+        if (this.onNoteTrigger) {
+          setTimeout(() => {
+            this.onNoteTrigger?.({ midi, freq, color: '#fbbf24' });
+          }, i * 80);
+        }
+      } catch {
+        // ignore
       }
     });
   }
@@ -195,7 +232,8 @@ export class SoundService {
    */
   public playCountdownBeep(num: number) {
     const ctx = this.initContext();
-    const freq = num === 1 ? 1046.5 : 784; // C6 or G5
+    if (!ctx) return;
+    const freq = num === 1 ? 1046.5 : 784;
     this.playTone(freq, ctx.currentTime, 0.12, 'sine', 0.25);
   }
 
@@ -204,17 +242,10 @@ export class SoundService {
    */
   public playBuzzer() {
     const ctx = this.initContext();
+    if (!ctx) return;
     const t = ctx.currentTime;
     this.playTone(116, t, 0.22, 'sawtooth', 0.16);
     this.playTone(110, t, 0.22, 'sawtooth', 0.16);
-  }
-
-  /**
-   * Baton swoosh or cue click
-   */
-  public playCueTick() {
-    const ctx = this.initContext();
-    this.playTone(880, ctx.currentTime, 0.04, 'sine', 0.12);
   }
 
   /**
@@ -229,7 +260,7 @@ export class SoundService {
         o.stop();
         o.disconnect();
       } catch {
-        // ignore already stopped
+        // ignore
       }
     });
     this.activeOscs = [];
